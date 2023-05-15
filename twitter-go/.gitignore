@@ -1,0 +1,3 @@
+# Volume for redis and postgres
+db
+.env
