@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"log"
-	"math/rand"
+
+	// "math/rand"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
-	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -138,18 +139,28 @@ func (f *FeedHandler) DashboardFromCacheAndDB(ctx *gin.Context){
 	log.Printf("Cache Feeds = %v", feedsFromCache)
 	
 	// err = f.DB.Raw("SELECT feeds.* FROM feeds INNER JOIN followings ON followings.followee_id = feeds.user_id WHERE followings.follower_id = ? AND (SELECT COUNT(*) FROM followings WHERE followee_id = followings.followee_id) > ?", uuid.MustParse(ctx.GetString("userId")), util.FOLLOWER_COUNT_THRESHOLD).Scan(&feedsFromDB).Error
-	err = f.DB.Raw(` 	
-		SELECT feeds.* 
-		FROM followings
-		JOIN feeds ON feeds.user_id = followings.followee_id
-		JOIN (
-		  SELECT followee_id, COUNT(*) AS num_followers
-		  FROM followings
-		  GROUP BY followee_id
-		  HAVING COUNT(*) > ?
-		) AS popular_users ON popular_users.followee_id = feeds.user_id
-		WHERE followings.follower_id = ?
-	`, util.FOLLOWER_COUNT_THRESHOLD, uuid.MustParse(ctx.GetString("userId"))).Scan(&feedsFromDB).Error
+	// err = f.DB.Raw(` 	
+	// 	SELECT feeds.* 
+	// 	FROM followings
+	// 	JOIN feeds ON feeds.user_id = followings.followee_id
+	// 	JOIN (
+	// 	  SELECT followee_id, COUNT(*) AS num_followers
+	// 	  FROM followings
+	// 	  GROUP BY followee_id
+	// 	  HAVING COUNT(*) > ?
+	// 	) AS popular_users ON popular_users.followee_id = feeds.user_id
+	// 	WHERE followings.follower_id = ?
+	// `, util.FOLLOWER_COUNT_THRESHOLD, uuid.MustParse(ctx.GetString("userId"))).Scan(&feedsFromDB).Error
+	
+	err = f.DB.Raw(`
+		SELECT * from feeds 
+		WHERE user_id IN (
+			SELECT followee_id from followings
+			WHERE followee_id IN ( SELECT followee_id from followings WHERE follower_id = ? )
+			GROUP BY followee_id
+			HAVING COUNT(*) > ?
+		)
+	`, uuid.MustParse(ctx.GetString("userId")), util.FOLLOWER_COUNT_THRESHOLD).Scan(&feedsFromDB).Error
 	if err != nil{
 		util.HandleError(ctx, http.StatusInternalServerError, err)
 		return
@@ -157,21 +168,21 @@ func (f *FeedHandler) DashboardFromCacheAndDB(ctx *gin.Context){
 	
 	log.Printf("DB Feeds = %v", feedsFromDB)
 
-	r := rand.New(rand.NewSource(time.Now().UnixMilli()))
-	if len(feedsFromCache) != 0{
-		r.Shuffle(len(feedsFromCache), func (i, j int)  {
-			temp := feedsFromCache[i]	
-			feedsFromCache[i] = feedsFromCache[j]
-			feedsFromCache[j] = temp
-		})
-	}
-	if len(feedsFromDB) != 0{
-		r.Shuffle(len(feedsFromDB), func (i, j int)  {
-			temp := feedsFromDB[i]	
-			feedsFromDB[i] = feedsFromDB[j]
-			feedsFromDB[j] = temp
-		})
-	}
+	// r := rand.New(rand.NewSource(time.Now().UnixMilli()))
+	// if len(feedsFromCache) != 0{
+	// 	r.Shuffle(len(feedsFromCache), func (i, j int)  {
+	// 		temp := feedsFromCache[i]	
+	// 		feedsFromCache[i] = feedsFromCache[j]
+	// 		feedsFromCache[j] = temp
+	// 	})
+	// }
+	// if len(feedsFromDB) != 0{
+	// 	r.Shuffle(len(feedsFromDB), func (i, j int)  {
+	// 		temp := feedsFromDB[i]	
+	// 		feedsFromDB[i] = feedsFromDB[j]
+	// 		feedsFromDB[j] = temp
+	// 	})
+	// }
 
 	finalFeedsList := append(feedsFromCache, feedsFromDB...)
 	log.Printf("Final Feeds List = %v", finalFeedsList)

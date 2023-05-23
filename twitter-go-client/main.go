@@ -20,6 +20,7 @@ type Benchmark struct{
 	gorm.Model
 	Timing int64 // Unix time millis
 	Type uint // 1 - From DB only ; 2 - From DB & Cache
+	NoOfItemsInFeed int `gorm:"column:no_of_items_in_feed"`
 }
 
 type Storage struct{
@@ -46,8 +47,8 @@ func main() {
 
 		BatchSize: 50,	
 
-		NormalInfluencerPostCount: 10,
-		FamousInfluencerPostCount: 10,
+		NormalInfluencerPostCount: 50,
+		FamousInfluencerPostCount: 50,
 
 		AudienceMutex: &sync.Mutex{},
 		BufferAudienceMutex: &sync.Mutex{},
@@ -311,6 +312,8 @@ func (b *BenchmarkConfig)BenchmarkDashboard(s *Storage){
 		wg.Wait()
 	}
 	
+	time.Sleep(time.Second * 5)
+	
 	// Retrieving Dashboard of Audience From DB only and saving timings in db
 	totalBatches = math.Ceil(float64(len(b.Audience)+len(b.BufferAudience))/ float64(b.BatchSize))
 	tempAudience = make([]*SignUpResponse, len(b.Audience) + len(b.BufferAudience))
@@ -327,12 +330,14 @@ func (b *BenchmarkConfig)BenchmarkDashboard(s *Storage){
 			go func(audience *SignUpResponse){
 				defer wg.Done()
 				now := time.Now()
-				GetDashboardFromDBOnly(audience.Data.Token)
-				s.DB.Create(&Benchmark{Timing: int64(time.Since(now).Milliseconds()), Type: 1})
+				noOfItemsInFeed := len(GetDashboardFromDBOnly(audience.Data.Token))
+				s.DB.Create(&Benchmark{Timing: int64(time.Since(now).Milliseconds()), Type: 1, NoOfItemsInFeed: noOfItemsInFeed})
 			}(audience)
 		}
 		wg.Wait()
 	}
+	
+	time.Sleep(time.Second * 5)
 	
 	// Retrieving Dashboard of Audience From DB And Cache and saving timings in db
 	totalBatches = math.Ceil(float64(len(b.Audience))/ float64(b.BatchSize))
@@ -349,8 +354,8 @@ func (b *BenchmarkConfig)BenchmarkDashboard(s *Storage){
 			go func(audience *SignUpResponse){
 				defer wg.Done()
 				now := time.Now()
-				GetDashboard(audience.Data.Token)
-				s.DB.Create(&Benchmark{Timing: int64(time.Since(now).Milliseconds()), Type: 2})
+				noOfItemsInFeed := len(GetDashboard(audience.Data.Token))
+				s.DB.Create(&Benchmark{Timing: int64(time.Since(now).Milliseconds()), Type: 2, NoOfItemsInFeed: noOfItemsInFeed})
 			}(audience)
 		}
 		wg.Wait()
